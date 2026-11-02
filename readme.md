@@ -163,3 +163,153 @@ python export_spaces.py
 注意：简介取自 Space 卡片元数据，部分项目可能没有填写简介；此时会标注为「暂无项目简介」。导出数量以实际 API 返回结果为准。
 
 最终效果： 一个包含全站公开 Spaces 项目的 Markdown 索引文件，可使用 VS Code、Obsidian、Typora 或 GitHub 阅读，也可以进一步转换成 Excel、CSV 或数据库。
+
+
+这是 Hugging Face 返回的 HTTP 429（Too Many Requests，请求过于频繁），不是你的 Python 代码语法错误，也不是 VS Code 的问题。
+
+从错误信息看，你的程序正在通过游标分页获取全部 Spaces，触发了 Hugging Face API 的访问频率限制。
+
+其中：
+
+text
+
+```text
+HTTP Error 429
+Rate limited.
+Waiting 96.0s before retry [Retry 1/5].
+```
+
+说明程序已经触发自动重试机制，正在等待 96 秒后再次请求。
+
+建议不要一直重复运行程序，否则可能进一步触发频率限制。
+
+## 1. 先解决当前 429
+
+建议按以下顺序操作：
+
+1. 暂停当前程序，等待 5～10 分钟，让限流窗口恢复。
+2. 登录 Hugging Face 账号。
+3. 创建一个 Read 权限的 Access Token。
+4. 设置 `HF_TOKEN` 环境变量。
+5. 降低分页请求频率，并保留自动重试。
+
+官方说明：Hub API 的速率限制按 5 分钟窗口计算，认证请求通常有更高额度。
+
+Hugging Face
+
+Token 创建地址：
+
+[Hugging Face Access Tokens](<https://huggingface.co/settings/tokens?utm_source=chatgpt.com>)
+
+## 2. 修改 Python 代码
+
+首先，在 VS Code 终端执行：
+
+bash
+
+```bash
+python -m pip install -U huggingface_hub
+```
+
+然后在 `export_spaces.py` 顶部增加：
+
+python
+
+```python
+import os
+import time
+from huggingface_hub import HfApi
+
+token = os.getenv("HF_TOKEN")
+
+api = HfApi(token=token)
+```
+
+将原来的：
+
+python
+
+```python
+spaces = list(api.list_spaces(
+    full=True,
+    limit=None
+))
+```
+
+修改为：
+
+python
+
+```python
+spaces = []
+
+for space in api.list_spaces(
+    full=True,
+    limit=100,
+):
+    spaces.append(space)
+
+    if len(spaces) % 100 == 0:
+        print(f"已获取 {len(spaces)} 个 Spaces")
+
+    # 降低请求频率
+    time.sleep(0.1)
+```
+
+注意：`list_spaces()` 是分页生成器，SDK 会负责分页和处理 429 重试。不要再额外对每一页手动重复请求。
+
+## 3. 配置 Hugging Face Token
+
+Windows PowerShell：
+
+powershell
+
+```powershell
+$env:HF_TOKEN="hf_你的Token"
+```
+
+然后执行：
+
+bash
+
+```bash
+python export_spaces.py
+```
+
+## 4. 如果仍然出现 429
+
+可以访问官方限流监控页面：
+
+[查看 Hugging Face API 额度](<https://huggingface.co/settings/billing?utm_source=chatgpt.com>)
+
+重点关注 API 请求额度和剩余重置时间。
+
+## 5. 我的建议
+
+如果你的目标是收集 Hugging Face 全站 Spaces，我建议采用以下方案：
+
+## 全量采集架构
+
+Hugging Face Spaces API
+
+分页获取公开项目
+
+请求限流与断点续传
+
+Token 认证、429 等待、保存游标
+
+本地 SQLite 数据库
+
+保存项目、简介、标签、更新时间
+
+Markdown
+
+MD 全量清单
+
+Excel
+
+XLSX 分类统计
+
+这样即使采集过程中遇到 429、程序关闭或网络中断，也不必从头开始。
+
+尤其建议增加断点续传功能，因为全站 Spaces 数据量较大，单纯依赖自动重试并不够可靠。

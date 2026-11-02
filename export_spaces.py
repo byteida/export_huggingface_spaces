@@ -1,9 +1,13 @@
 
 import json
-from datetime import datetime, timezone
+import os
+import time
 from huggingface_hub import HfApi
+from datetime import datetime, timezone
 
-api = HfApi()
+token = os.getenv("HF_TOKEN")
+
+api = HfApi(token=token)
 
 OUTPUT = "huggingface_spaces_all.md"
 
@@ -19,10 +23,26 @@ def clean(value):
 
 print("正在获取 Hugging Face 全部公开 Spaces...")
 
+'''
 spaces = list(api.list_spaces(
     full=True,
     limit=None
 ))
+'''
+
+spaces = []
+
+for space in api.list_spaces(
+    full=True,
+    limit=100,
+):
+    spaces.append(space)
+
+    if len(spaces) % 100 == 0:
+        print(f"已获取 {len(spaces)} 个 Spaces")
+
+    # 降低请求频率
+    time.sleep(0.1)
 
 print(f"获取完成，共 {len(spaces)} 个项目")
 
