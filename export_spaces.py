@@ -34,7 +34,7 @@ spaces = []
 
 for space in api.list_spaces(
     full=True,
-    limit=None,
+    limit=10000,
 ):
     spaces.append(space)
 
